@@ -105,7 +105,7 @@ async function deleteSelectedDeck(){
       remaining=deleteAll?[]:state.cards.filter(card=>card.deck!==deck);
       els.input.value=serializeTextCards(remaining);
     }
-    for(const card of removedCards)delete state.reviews[cardKey(card)];
+    for(const card of removedCards){delete state.reviews[cardKey(card)];delete state.reviews[legacyCardKey(card)];}
     state.cards=remaining;state.selectedDeck='*';state.queue=[];state.missed=[];state.index=0;
     mediaRenderToken++;clearMediaUrls();
     if(!remaining.length){state.source='text';state.libraryName='';els.input.value='';els.input.placeholder=DEFAULT_CARD_PLACEHOLDER;}
@@ -142,8 +142,10 @@ async function importFile(file){
     const imported=await window.KeystrokeLibrary.importApkg(file,message=>setImportNotice(message));
     state.cards=imported.cards;state.source='apkg';state.libraryName=imported.name;state.selectedDeck='*';els.input.value='';els.input.placeholder=`${imported.name} is stored locally. Import another file or try the sample to replace it.`;refreshDeckSelector();save();
     const imageText=imported.loadedImages?` and ${imported.loadedImages} image${imported.loadedImages===1?'':'s'}`:'';
-    const missingText=imported.missingImages?` (${imported.missingImages} unsupported or missing image${imported.missingImages===1?'':'s'})`:'';
-    setImportNotice(`Imported ${imported.cards.length} cards across ${new Set(imported.cards.map(card=>card.deck)).size} decks${imageText}${missingText}.`,'good');
+    const missingText=imported.missingImages?` ${imported.missingImages} unsupported or missing image${imported.missingImages===1?' was':'s were'} skipped.`:'';
+    const skippedText=imported.skippedCards?` ${imported.skippedCards} unusable card${imported.skippedCards===1?' was':'s were'} skipped.`:'';
+    const occlusionText=imported.imageOcclusionCards?` ${imported.imageOcclusionCards} image occlusion card${imported.imageOcclusionCards===1?' uses':'s use'} self-rated Learn mode.`:'';
+    setImportNotice(`Imported ${imported.cards.length} of ${imported.sourceCards||imported.cards.length} Anki cards across ${new Set(imported.cards.map(card=>card.deck)).size} decks${imageText}.${occlusionText}${skippedText}${missingText}`,'good');
   }else{
     state.selectedDeck='*';els.input.value=await file.text();updateParse();
     setImportNotice(`Imported ${state.cards.length} card${state.cards.length===1?'':'s'} from ${file.name}.`,'good');
@@ -165,14 +167,16 @@ function handleFileDrop(event){
   handleImportFile(selection.file);
 }
 function shuffle(a) { const b=[...a]; for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];} return b; }
-function makeQueue(cards=state.cards) { return shuffle(cards).map(card => ({ card, direction: state.mode==='mixed' ? (Math.random()<.5?'term-def':'def-term') : state.mode, repeats: 0 })); }
+function makeQueue(cards=state.cards) { return shuffle(cards).map(card => ({ card, direction: card.manual?'learn':state.mode==='mixed' ? (Math.random()<.5?'term-def':'def-term') : state.mode, repeats: 0 })); }
 function show(view) { [els.setup,els.practice,els.results].forEach(v=>v.classList.add('hidden')); view.classList.remove('hidden'); }
-function cardKey(card){let h=2166136261,s=`${card.deck}|${card.term}|${card.definition}`;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return `c${(h>>>0).toString(36)}`}
-function dueCards(cards){const now=Date.now();return cards.filter(card=>!state.reviews[cardKey(card)]||state.reviews[cardKey(card)].dueAt<=now)}
+function legacyCardKey(card){let h=2166136261,s=`${card.deck}|${card.term}|${card.definition}`;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return `c${(h>>>0).toString(36)}`}
+function cardKey(card){return card.ankiCardId?`a${card.ankiCardId}`:legacyCardKey(card)}
+function reviewFor(card){return state.reviews[cardKey(card)]||state.reviews[legacyCardKey(card)]||null}
+function dueCards(cards){const now=Date.now();return cards.filter(card=>!reviewFor(card)||reviewFor(card).dueAt<=now)}
 const MINUTE=60000,DAY=86400000;
 function intervalLabel(ms){if(ms<60*MINUTE)return `${Math.max(1,Math.round(ms/MINUTE))}m`;if(ms<DAY)return `${Math.max(1,Math.round(ms/(60*MINUTE)))}h`;const days=Math.max(1,Math.round(ms/DAY));return days<30?`${days}d`:days<365?`${Math.round(days/30)}mo`:`${(days/365).toFixed(1).replace(/\.0$/,'')}y`}
 function nextInterval(card,rating){
-  const review=state.reviews[cardKey(card)]||{},previous=Math.max(0,Number(review.intervalDays)||0),currentEase=Math.min(3.2,Math.max(1.3,Number(review.ease)||2.5));
+  const review=reviewFor(card)||{},previous=Math.max(0,Number(review.intervalDays)||0),currentEase=Math.min(3.2,Math.max(1.3,Number(review.ease)||2.5));
   const elapsed=review.reviewedAt?Math.max(0,(Date.now()-review.reviewedAt)/DAY):previous,overdue=Math.max(0,elapsed-previous),base=previous+overdue*.5;
   let days,ease=currentEase;
   if(rating==='again'){days=1/1440;ease=Math.max(1.3,currentEase-.2)}
@@ -203,16 +207,17 @@ function current() { return state.queue[state.index]; }
 function norm(s) { return s.normalize('NFKC').trim().toLowerCase().replace(/[\s\u00a0]+/g,' ').replace(/[.,;:!?]+$/,''); }
 function stats() { const mins=Math.max((Date.now()-state.startedAt)/60000,1/60); return {accuracy:state.attempts?Math.round(state.correct/state.attempts*100):100,wpm:Math.round((state.typedChars/5)/mins)}; }
 function clearMediaUrls(){for(const url of mediaUrls)URL.revokeObjectURL(url);mediaUrls=[]}
-async function appendMedia(target,keys=[],token=mediaRenderToken){
+async function appendMedia(target,keys=[],occlusions=[],token=mediaRenderToken){
   if(!keys?.length||!window.KeystrokeLibrary)return;
   const gallery=document.createElement('div');gallery.className='card-media';target.appendChild(gallery);
-  for(const key of keys){
-    try { const item=await window.KeystrokeLibrary.getMedia(key);if(token!==mediaRenderToken)return;if(!item?.blob)continue;const url=URL.createObjectURL(item.blob);mediaUrls.push(url);const image=document.createElement('img');image.src=url;image.alt=item.name||'Card image';image.loading='eager';gallery.appendChild(image); }
+  for(const [index,key] of keys.entries()){
+    try { const item=await window.KeystrokeLibrary.getMedia(key);if(token!==mediaRenderToken)return;if(!item?.blob)continue;const url=URL.createObjectURL(item.blob);mediaUrls.push(url);const frame=document.createElement('span');frame.className='media-frame';const image=document.createElement('img');image.src=url;image.alt=item.name||'Card image';image.loading='eager';frame.appendChild(image);if(index===0)for(const occlusion of occlusions||[]){const mask=document.createElement('i');mask.className=`media-occlusion${occlusion.shape==='ellipse'?' is-ellipse':''}`;mask.style.left=`${occlusion.left*100}%`;mask.style.top=`${occlusion.top*100}%`;mask.style.width=`${occlusion.width*100}%`;mask.style.height=`${occlusion.height*100}%`;frame.appendChild(mask)}gallery.appendChild(frame); }
     catch { if(token===mediaRenderToken){const missing=document.createElement('span');missing.className='media-missing';missing.textContent='image unavailable';gallery.appendChild(missing);} }
   }
   if(!gallery.childElementCount)gallery.remove();
 }
-function renderField(target,text,media,token=mediaRenderToken){target.textContent='';if(text){const copy=document.createElement('div');copy.className='field-text';copy.textContent=text;target.appendChild(copy)}appendMedia(target,media,token)}
+function renderField(target,text,media,occlusions=[],token=mediaRenderToken){target.textContent='';if(text){const copy=document.createElement('div');copy.className='field-text';copy.textContent=text;target.appendChild(copy)}appendMedia(target,media,occlusions,token)}
+function appendAnswerExtra(target,text){if(!text)return;const extra=document.createElement('div');extra.className='answer-extra';extra.textContent=text;target.appendChild(extra)}
 function renderCard() {
   const q=current(); if(!q) return finish();
   mediaRenderToken++;clearMediaUrls();
@@ -221,12 +226,13 @@ function renderCard() {
   els.form.classList.remove('hidden'); els.learnControls.classList.add('hidden');
   els.answer.placeholder=learning?'type what you remember…':'start typing…';
   els.direction.textContent=learning?'learn this card':termFirst?'type the definition':'type the term';
-  renderField(els.prompt,learning||termFirst?q.card.term:q.card.definition,learning||termFirst?q.card.termMedia:q.card.definitionMedia,mediaRenderToken);
+  const promptIsTerm=learning||termFirst;
+  renderField(els.prompt,promptIsTerm?q.card.term:q.card.definition,promptIsTerm?q.card.termMedia:q.card.definitionMedia,promptIsTerm?q.card.termOcclusions:[],mediaRenderToken);
   if(learning)updateIntervals(q.card);
   const st=stats(); els.progress.textContent=`${state.index+1} / ${state.queue.length}`; els.accuracy.textContent=`${st.accuracy}%`; els.wpm.textContent=st.wpm; els.streak.textContent=state.streak; els.bar.style.width=`${state.index/state.queue.length*100}%`; els.answer.focus();
 }
-function revealLearn() { const q=current(); if(!q||q.direction!=='learn'||state.answered)return; const response=els.answer.value.trim(); state.answered=true; state.typedChars+=response.length; els.answer.disabled=true; els.feedback.className='feedback';els.feedback.textContent='';const responseLine=document.createElement('span');responseLine.textContent=response?`your answer: ${response}`:'no answer entered';const expected=document.createElement('div');expected.className='learn-answer';els.feedback.append(responseLine,expected);renderField(expected,q.card.definition,q.card.definitionMedia,mediaRenderToken);els.learnControls.classList.remove('hidden'); }
-function rateLearn(rating) { const q=current(); if(!q||q.direction!=='learn'||!state.answered)return; const recalled=rating!=='again',key=cardKey(q.card),previous=state.reviews[key]||{},interval=nextInterval(q.card,rating); state.reviews[key]={dueAt:Date.now()+interval.ms,intervalDays:interval.days,ease:interval.ease,reps:(previous.reps||0)+1,lapses:(previous.lapses||0)+(rating==='again'?1:0),lastRating:rating,reviewedAt:Date.now()};state.attempts++;recordActivity(recalled);if(recalled){state.correct++;state.streak++;state.bestStreak=Math.max(state.bestStreak,state.streak);}else state.streak=0; if(rating==='again'||rating==='hard'){if(!state.missed.some(card=>cardKey(card)===key))state.missed.push(q.card);if(rating==='again'&&q.repeats<2){const insertAt=Math.min(state.index+3,state.queue.length);state.queue.splice(insertAt,0,{...q,repeats:q.repeats+1});}} state.index++;renderCard(); }
+function revealLearn() { const q=current(); if(!q||q.direction!=='learn'||state.answered)return; const response=els.answer.value.trim(); state.answered=true; state.typedChars+=response.length; els.answer.disabled=true; els.feedback.className='feedback';els.feedback.textContent='';const responseLine=document.createElement('span');responseLine.textContent=response?`your answer: ${response}`:'no answer entered';const expected=document.createElement('div');expected.className='learn-answer';els.feedback.append(responseLine,expected);renderField(expected,q.card.definition,q.card.definitionMedia,[],mediaRenderToken);appendAnswerExtra(expected,q.card.answerExtra);els.learnControls.classList.remove('hidden'); }
+function rateLearn(rating) { const q=current(); if(!q||q.direction!=='learn'||!state.answered)return; const recalled=rating!=='again',key=cardKey(q.card),previous=reviewFor(q.card)||{},interval=nextInterval(q.card,rating); state.reviews[key]={dueAt:Date.now()+interval.ms,intervalDays:interval.days,ease:interval.ease,reps:(previous.reps||0)+1,lapses:(previous.lapses||0)+(rating==='again'?1:0),lastRating:rating,reviewedAt:Date.now()};state.attempts++;recordActivity(recalled);if(recalled){state.correct++;state.streak++;state.bestStreak=Math.max(state.bestStreak,state.streak);}else state.streak=0; if(rating==='again'||rating==='hard'){if(!state.missed.some(card=>cardKey(card)===key))state.missed.push(q.card);if(rating==='again'&&q.repeats<2){const insertAt=Math.min(state.index+3,state.queue.length);state.queue.splice(insertAt,0,{...q,repeats:q.repeats+1});}} state.index++;renderCard(); }
 function submitAnswer() {
   if(current()?.direction==='learn') return revealLearn();
   if(state.answered) return next();
@@ -234,7 +240,7 @@ function submitAnswer() {
   if(!answer.trim()) return;
   const ok=norm(answer)===norm(expected); state.attempts++; state.typedChars+=answer.trim().length;recordActivity(ok);
   if(ok){state.correct++;state.streak++;state.bestStreak=Math.max(state.bestStreak,state.streak);els.feedback.className='feedback good';els.feedback.textContent='correct ';const hint=document.createElement('span');hint.textContent='press enter to continue';els.feedback.appendChild(hint);}
-  else{state.streak=0;if(!state.missed.some(card=>cardKey(card)===cardKey(q.card)))state.missed.push(q.card);els.feedback.className='feedback bad';els.feedback.textContent='not quite';const expectedBlock=document.createElement('div');expectedBlock.className='learn-answer';els.feedback.appendChild(expectedBlock);renderField(expectedBlock,`answer: ${expected}`,q.direction==='term-def'?q.card.definitionMedia:q.card.termMedia,mediaRenderToken);const hint=document.createElement('span');hint.textContent='press enter to continue';els.feedback.appendChild(hint);}
+  else{state.streak=0;if(!state.missed.some(card=>cardKey(card)===cardKey(q.card)))state.missed.push(q.card);els.feedback.className='feedback bad';els.feedback.textContent='not quite';const expectedBlock=document.createElement('div');expectedBlock.className='learn-answer';els.feedback.appendChild(expectedBlock);renderField(expectedBlock,`answer: ${expected}`,q.direction==='term-def'?q.card.definitionMedia:q.card.termMedia,[],mediaRenderToken);if(q.direction==='term-def')appendAnswerExtra(expectedBlock,q.card.answerExtra);const hint=document.createElement('span');hint.textContent='press enter to continue';els.feedback.appendChild(hint);}
   state.answered=true; els.answer.disabled=true; const st=stats(); els.accuracy.textContent=`${st.accuracy}%`;els.wpm.textContent=st.wpm;els.streak.textContent=state.streak;
 }
 function next(){state.index++;renderCard()}

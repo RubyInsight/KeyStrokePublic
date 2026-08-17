@@ -1,0 +1,146 @@
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.KeystrokeAnkiCards = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  function visibleText(value) {
+    return String(value || '')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<img\b[^>]*>/gi, ' image ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function unique(values) {
+    return [...new Set(values.filter(Boolean))];
+  }
+
+  function parseCloze(html, cardOrdinal) {
+    const target = Number(cardOrdinal) + 1;
+    const answers = [];
+    let matched = false;
+    const questionHtml = String(html || '').replace(/\{\{c(\d+)::([\s\S]*?)(?:::(.*?))?\}\}/gi,
+      (whole, number, answer, hint) => {
+        if (Number(number) !== target) return answer;
+        matched = true;
+        answers.push(answer);
+        return `[${visibleText(hint) || '…'}]`;
+      });
+    return { target, matched, questionHtml, answers };
+  }
+
+  function finiteFraction(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : null;
+  }
+
+  function parseImageOcclusions(html, cardOrdinal) {
+    const target = Number(cardOrdinal) + 1;
+    const results = [];
+    const pattern = /\{\{c(\d+)::image-occlusion:([^}]+)\}\}/gi;
+    for (const match of String(html || '').matchAll(pattern)) {
+      if (Number(match[1]) !== target) continue;
+      const segments = match[2].split(':');
+      const shape = segments.shift() || 'rect';
+      const values = {};
+      for (const segment of segments) {
+        const separator = segment.indexOf('=');
+        if (separator > 0) values[segment.slice(0, separator)] = segment.slice(separator + 1);
+      }
+      const left = finiteFraction(values.left);
+      const top = finiteFraction(values.top);
+      const width = finiteFraction(values.width);
+      const height = finiteFraction(values.height);
+      if ([left, top, width, height].some(value => value == null)) continue;
+      results.push({ shape, left, top, width, height });
+    }
+    return results;
+  }
+
+  function namedIndex(names, pattern) {
+    return names.findIndex(name => pattern.test(String(name || '').trim()));
+  }
+
+  function usableIndexes(fields) {
+    return fields.map((field, index) => visibleText(field) ? index : -1).filter(index => index >= 0);
+  }
+
+  function convertCard(row, noteType = {}) {
+    const fields = String(row.flds || '').split('\x1f');
+    const names = Array.isArray(noteType.fields) ? noteType.fields : [];
+    const typeName = String(noteType.name || '');
+    const target = Number(row.ord || 0) + 1;
+    const clozeField = fields.findIndex(field => /\{\{c\d+::/i.test(field));
+    const occlusionField = fields.findIndex(field => /image-occlusion:/i.test(field));
+
+    if (occlusionField >= 0 || /image occlusion/i.test(typeName)) {
+      let imageField = namedIndex(names, /^image$/i);
+      if (imageField < 0) imageField = fields.findIndex(field => /<img\b/i.test(field));
+      const headerField = namedIndex(names, /^(header|question|prompt)$/i);
+      const extraIndexes = names.map((name, index) => /^(back extra|comments?|extra)$/i.test(name) ? index : -1).filter(index => index >= 0);
+      const extra = extraIndexes.map(index => fields[index]).filter(visibleText).join('<br><br>');
+      const imageHtml = imageField >= 0 ? fields[imageField] : '';
+      const header = headerField >= 0 ? fields[headerField] : '';
+      return {
+        kind: 'image-occlusion',
+        manual: true,
+        termHtml: visibleText(header) ? header : `Image occlusion ${target}`,
+        definitionHtml: visibleText(extra) ? extra : 'Check the revealed image.',
+        answerExtraHtml: '',
+        termMediaHtml: [imageHtml],
+        definitionMediaHtml: [imageHtml, extra],
+        termOcclusions: parseImageOcclusions(fields[occlusionField] || '', row.ord)
+      };
+    }
+
+    if (clozeField >= 0 || /cloze/i.test(typeName) || Number(noteType.type) === 1) {
+      const textField = namedIndex(names, /^text$/i);
+      const sourceIndex = textField >= 0 ? textField : Math.max(0, clozeField);
+      const parsed = parseCloze(fields[sourceIndex], row.ord);
+      const extras = fields.filter((field, index) => index !== sourceIndex && visibleText(field));
+      if (parsed.matched && parsed.answers.length) {
+        return {
+          kind: 'cloze',
+          manual: false,
+          termHtml: parsed.questionHtml,
+          definitionHtml: parsed.answers.join('<br>'),
+          answerExtraHtml: extras.join('<br><br>'),
+          termMediaHtml: [parsed.questionHtml],
+          definitionMediaHtml: [fields[sourceIndex], ...extras],
+          termOcclusions: []
+        };
+      }
+    }
+
+    const usable = usableIndexes(fields);
+    if (!usable.length) return null;
+    let front = namedIndex(names, /^(front|question|term|word|prompt)$/i);
+    let back = namedIndex(names, /^(back|answer|definition|meaning)$/i);
+    if (front < 0 || !visibleText(fields[front])) front = usable[0];
+    if (back < 0 || back === front || !visibleText(fields[back])) back = usable.find(index => index !== front) ?? -1;
+    let manual = false;
+    if (back < 0) {
+      back = front;
+      manual = true;
+    }
+    const templateName = String(noteType.templates?.[Number(row.ord)] || '');
+    if (Number(row.ord) > 0 && /reverse|back.*front/i.test(`${typeName} ${templateName}`)) {
+      [front, back] = [back, front];
+    }
+    const extraIndexes = usable.filter(index => index !== front && index !== back);
+    return {
+      kind: 'basic',
+      manual,
+      termHtml: fields[front],
+      definitionHtml: fields[back],
+      answerExtraHtml: extraIndexes.map(index => fields[index]).join('<br><br>'),
+      termMediaHtml: [fields[front]],
+      definitionMediaHtml: [fields[back], ...extraIndexes.map(index => fields[index])],
+      termOcclusions: []
+    };
+  }
+
+  return { convertCard, parseCloze, parseImageOcclusions, visibleText, unique };
+});

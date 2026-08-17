@@ -10,6 +10,7 @@
 
   let databasePromise;
   let sqlPromise;
+  const AnkiCards = window.KeystrokeAnkiCards;
 
   function requestResult(request) {
     return new Promise((resolve, reject) => {
@@ -139,6 +140,36 @@
     const parsed = JSON.parse(legacy);
     for (const [id, deck] of Object.entries(parsed)) names.set(String(id), cleanDeckName(deck.name));
     return names;
+  }
+
+  function noteTypeDetails(db) {
+    const details = new Map();
+    if (tableExists(db, 'notetypes')) {
+      for (const row of sqlRows(db, 'SELECT id, name FROM notetypes')) {
+        details.set(String(row.id), { name: row.name, fields: [], templates: [] });
+      }
+      for (const row of sqlRows(db, 'SELECT ntid, ord, name FROM fields ORDER BY ntid, ord')) {
+        const detail = details.get(String(row.ntid));
+        if (detail) detail.fields[Number(row.ord)] = row.name;
+      }
+      for (const row of sqlRows(db, 'SELECT ntid, ord, name FROM templates ORDER BY ntid, ord')) {
+        const detail = details.get(String(row.ntid));
+        if (detail) detail.templates[Number(row.ord)] = row.name;
+      }
+      return details;
+    }
+    const legacy = sqlRows(db, 'SELECT models FROM col LIMIT 1')[0]?.models;
+    if (!legacy) return details;
+    const models = JSON.parse(legacy);
+    for (const [id, model] of Object.entries(models)) {
+      details.set(String(id), {
+        name: model.name || '',
+        type: model.type,
+        fields: (model.flds || []).map(field => field.name),
+        templates: (model.tmpls || []).map(template => template.name)
+      });
+    }
+    return details;
   }
 
   function documentFor(html) {
@@ -273,6 +304,7 @@
 
   async function importApkg(file, onProgress = () => {}) {
     if (!window.JSZip) throw new Error('The offline Anki package reader did not load.');
+    if (!AnkiCards) throw new Error('The Anki card converter did not load.');
     if (!file || file.size > MAX_PACKAGE_BYTES) throw new Error('That Anki package is larger than the 500 MB safety limit.');
     onProgress('Opening the Anki package…');
     const zip = await window.JSZip.loadAsync(file);
@@ -286,14 +318,15 @@
     const db = new SQL.Database(collectionBytes);
     let rows;
     let decks;
+    let noteTypes;
     try {
       decks = deckNames(db);
+      noteTypes = noteTypeDetails(db);
       rows = sqlRows(db, `
-        SELECT n.id AS nid, c.did AS did, n.flds AS flds, MIN(c.ord) AS ord
+        SELECT c.id AS cid, n.id AS nid, n.mid AS mid, c.did AS did, c.ord AS ord, n.flds AS flds
         FROM notes n
         JOIN cards c ON c.nid = n.id
-        GROUP BY n.id, c.did
-        ORDER BY n.id
+        ORDER BY c.id
       `);
     } finally {
       db.close();
@@ -303,25 +336,33 @@
 
     const cards = [];
     const referencedImages = new Set();
+    const importStats = { sourceCards: rows.length, skippedCards: 0, clozeCards: 0, imageOcclusionCards: 0, manualCards: 0 };
     for (const row of rows) {
-      const fields = String(row.flds || '').split('\x1f');
-      if (fields.length < 2) continue;
-      const termHtml = fields[0];
-      const definitionHtml = fields[1];
-      const termImageNames = imageNames(termHtml);
-      const definitionImageNames = imageNames(definitionHtml);
+      const converted = AnkiCards.convertCard(row, noteTypes.get(String(row.mid)) || {});
+      if (!converted) { importStats.skippedCards++; continue; }
+      const termImageNames = AnkiCards.unique(converted.termMediaHtml.flatMap(imageNames));
+      const definitionImageNames = AnkiCards.unique(converted.definitionMediaHtml.flatMap(imageNames));
       termImageNames.forEach(name => referencedImages.add(name));
       definitionImageNames.forEach(name => referencedImages.add(name));
-      const term = fieldText(termHtml);
-      const definition = fieldText(definitionHtml);
-      if ((!term && !termImageNames.length) || (!definition && !definitionImageNames.length)) continue;
+      const term = fieldText(converted.termHtml);
+      const definition = fieldText(converted.definitionHtml);
+      if ((!term && !termImageNames.length) || (!definition && !definitionImageNames.length)) { importStats.skippedCards++; continue; }
+      if (converted.kind === 'cloze') importStats.clozeCards++;
+      if (converted.kind === 'image-occlusion') importStats.imageOcclusionCards++;
+      if (converted.manual) importStats.manualCards++;
       cards.push({
         deck: decks.get(String(row.did)) || 'Unfiled',
         term,
         definition,
+        answerExtra: fieldText(converted.answerExtraHtml),
         termMedia: termImageNames,
         definitionMedia: definitionImageNames,
-        ankiNoteId: String(row.nid)
+        termOcclusions: converted.termOcclusions,
+        manual: converted.manual,
+        ankiKind: converted.kind,
+        ankiCardId: String(row.cid),
+        ankiNoteId: String(row.nid),
+        ankiCardOrdinal: Number(row.ord)
       });
     }
     if (!cards.length) throw new Error('No usable two-field cards were found in this package.');
@@ -354,7 +395,7 @@
     const packageName = file.name.replace(/\.apkg$/i, '');
     onProgress('Saving the deck on this device…');
     await replaceLibrary(cards, media, packageName);
-    return { cards, name: packageName, loadedImages, missingImages };
+    return { cards, name: packageName, loadedImages, missingImages, ...importStats };
   }
 
   window.KeystrokeLibrary = { clearLibrary, deleteDeck, getMedia, importApkg, loadLibrary, replaceLibrary };

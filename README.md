@@ -58,6 +58,8 @@ Use an Anki `.apkg` file when cards contain images:
 
 Keystroke preserves images referenced by the first two card fields. PNG, JPEG, GIF, WebP, AVIF, and BMP images up to 50 MB each are supported. Unsupported, missing, or oversized images are skipped and reported after import.
 
+Every generated Anki card is imported. Each cloze deletion becomes its own typing prompt, while image-occlusion cards show a masked image followed by an unmasked reveal in self-rated Learn mode.
+
 Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Plain-text, TSV, and CSV imports cannot preserve image files, so use `.apkg` for image cards.
 
 Keep the original `.apkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics—not card text or media.
