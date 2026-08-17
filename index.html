@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Keystroke is a private, local-first study app for Anki cards.">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="theme-color" content="#111214">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23111214%22/><path d=%22M15 36c9-18 25-18 34 0%22 fill=%22none%22 stroke=%22%23e2b714%22 stroke-width=%226%22 stroke-linecap=%22round%22/></svg>">
+  <title>Keystroke — type your way to recall</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="features.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <button class="brand" id="brandBtn" aria-label="Go to setup">
+        <span class="brand-mark" aria-hidden="true">⌁</span>
+        <span>keystroke</span>
+      </button>
+      <div class="header-actions">
+        <button class="icon-button" id="calendarBtn" aria-label="Study calendar" title="Study calendar">▦</button>
+        <button class="icon-button" id="themeBtn" aria-label="Choose theme" title="Theme: dark">◈</button>
+        <button class="icon-button" id="helpBtn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="setupView" class="view setup-view">
+        <div class="eyebrow">your cards, your pace</div>
+        <h1>Build recall.<br><span>One keystroke at a time.</span></h1>
+        <p class="lede">Paste cards or import an Anki deck package. We'll keep decks separate and preserve included images—no account, no distractions.</p>
+
+        <div class="import-card" id="importCard" aria-describedby="dropHint">
+          <div class="import-head">
+            <div>
+              <label for="cardInput">Import cards</label>
+              <p>Anki .apkg, text, tab, comma, or semicolon separated</p>
+            </div>
+            <button id="sampleBtn" class="text-button">try sample</button>
+          </div>
+          <textarea id="cardInput" spellcheck="false" placeholder="mitosis&#9;Cell division producing two identical cells&#10;osmosis&#9;Movement of water across a membrane"></textarea>
+          <div class="import-footer">
+            <span id="parseStatus"><b>0</b> cards detected</span>
+            <div class="import-actions">
+              <span id="dropHint" class="drop-hint">drop a file here</span>
+              <label class="file-button">↑ choose a file<input id="fileInput" type="file" accept=".apkg,.csv,.tsv,.txt,application/octet-stream,text/csv,text/tab-separated-values,text/plain"></label>
+            </div>
+          </div>
+        </div>
+        <div id="importNotice" class="import-notice hidden" role="status" aria-live="polite"></div>
+
+        <div class="setup-options">
+          <div id="deckPicker" class="deck-picker hidden">
+            <label for="deckSelect">study deck</label>
+            <div class="deck-controls">
+              <select id="deckSelect" aria-label="Choose a deck"></select>
+              <button id="deleteDeckBtn" class="delete-deck-button" type="button" disabled>delete deck</button>
+            </div>
+          </div>
+          <fieldset>
+            <legend>practice direction</legend>
+            <div class="segmented">
+              <label><input type="radio" name="mode" value="term-def" checked><span>term <i>→</i> definition</span></label>
+              <label><input type="radio" name="mode" value="def-term"><span>definition <i>→</i> term</span></label>
+              <label><input type="radio" name="mode" value="mixed"><span>mixed</span></label>
+              <label><input type="radio" name="mode" value="learn"><span>anki learn</span></label>
+            </div>
+          </fieldset>
+          <div class="start-row">
+            <button id="startBtn" class="primary-button" disabled>start session <span>↵</span></button>
+            <span>stored only on this device</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="practiceView" class="view practice-view hidden">
+        <div class="session-toolbar">
+          <div class="mode-tabs" role="group" aria-label="Practice mode">
+            <button data-mode="term-def" class="active">term → definition</button>
+            <button data-mode="def-term">definition → term</button>
+            <button data-mode="mixed">mixed</button>
+            <button data-mode="learn">anki learn</button>
+          </div>
+          <div class="session-filters"><span id="sessionDeck"></span><label class="toggle"><input id="missedToggle" type="checkbox"><span></span> missed only</label></div>
+        </div>
+
+        <div class="progress-track"><div id="progressBar"></div></div>
+        <div class="stats-row">
+          <div><span id="progressStat">1 / 10</span><small>progress</small></div>
+          <div><span id="accuracyStat">100%</span><small>accuracy</small></div>
+          <div><span id="wpmStat">0</span><small>wpm</small></div>
+          <div><span id="streakStat">0</span><small>streak</small></div>
+        </div>
+
+        <article class="prompt-area">
+          <div id="directionLabel" class="prompt-label">type the definition</div>
+          <div id="promptText" class="prompt-text"></div>
+          <form id="answerForm" autocomplete="off">
+            <textarea id="answerInput" rows="2" placeholder="start typing…" aria-label="Your answer" spellcheck="false"></textarea>
+            <button class="submit-button" type="submit" aria-label="Submit answer">↵</button>
+          </form>
+          <div id="learnControls" class="learn-controls hidden">
+            <button data-rating="again" class="learn-again" type="button"><kbd>1</kbd> again <small>soon</small></button>
+            <button data-rating="hard" class="learn-hard" type="button"><kbd>2</kbd> hard <small>later</small></button>
+            <button data-rating="good" class="learn-good" type="button"><kbd>3</kbd> good <small>learned</small></button>
+            <button data-rating="easy" class="learn-easy" type="button"><kbd>4</kbd> easy <small>mastered</small></button>
+          </div>
+          <div id="feedback" class="feedback" aria-live="polite"></div>
+          <div class="practice-hints"><span><kbd>enter</kbd> submit / next</span><span><kbd>tab</kbd> skip</span><span><kbd>esc</kbd> pause</span></div>
+        </article>
+
+        <div class="session-actions">
+          <button id="shuffleBtn">⇄ <span>shuffle</span></button>
+          <button id="restartBtn">↻ <span>restart</span></button>
+          <button id="editBtn">✎ <span>edit cards</span></button>
+        </div>
+      </section>
+
+      <section id="resultsView" class="view results-view hidden">
+        <div class="result-mark">✓</div>
+        <div class="eyebrow">session complete</div>
+        <h2>Nice work.</h2>
+        <p id="resultSummary"></p>
+        <div class="result-stats">
+          <div><strong id="resultAccuracy">0%</strong><span>accuracy</span></div>
+          <div><strong id="resultWpm">0</strong><span>wpm</span></div>
+          <div><strong id="resultBest">0</strong><span>best streak</span></div>
+        </div>
+        <div class="result-actions">
+          <button id="againBtn" class="primary-button">practice again <span>↵</span></button>
+          <button id="missedBtn" class="secondary-button">review missed</button>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>keystroke · v1.3.0 · created by gemz</span><span>your data never leaves your device</span></footer>
+  </div>
+
+  <dialog id="helpDialog">
+    <button id="closeHelp" class="dialog-close" aria-label="Close">×</button>
+    <div class="eyebrow">keyboard first</div>
+    <h2>Shortcuts</h2>
+    <dl><div><dt><kbd>enter</kbd></dt><dd>Submit an answer or reveal</dd></div><div><dt><kbd>1–4</kbd></dt><dd>Rate Again, Hard, Good, or Easy</dd></div><div><dt><kbd>tab</kbd></dt><dd>Skip the current card</dd></div><div><dt><kbd>esc</kbd></dt><dd>Pause or return to setup</dd></div><div><dt><kbd>r</kbd></dt><dd>Restart (outside the answer box)</dd></div><div><dt><kbd>s</kbd></dt><dd>Shuffle (outside the answer box)</dd></div></dl>
+    <div class="credits"><span>credits</span><strong>Keystroke was created by gemz.</strong></div>
+  </dialog>
+  <dialog id="calendarDialog" class="calendar-dialog">
+    <button id="closeCalendar" class="dialog-close" aria-label="Close">×</button>
+    <div class="eyebrow">local progress</div>
+    <h2>Study calendar</h2>
+    <div class="calendar-months"><span>1 year of recall</span><span id="calendarTotal">0 reviews</span></div>
+    <div id="heatmap" class="heatmap" aria-label="Study activity during the last year"></div>
+    <div class="calendar-legend"><span>less</span><i data-level="0"></i><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i><span>more</span></div>
+    <div class="calendar-stats">
+      <div><strong id="dailyAverage">0</strong><span>daily average</span></div>
+      <div><strong id="daysStudied">0</strong><span>days studied</span></div>
+      <div><strong id="longestStreak">0</strong><span>longest streak</span></div>
+      <div><strong id="currentStreak">0</strong><span>current streak</span></div>
+    </div>
+    <div class="backup-actions">
+      <a id="exportBackup" class="secondary-button" href="#">export backup</a>
+      <label class="secondary-button">import backup<input id="backupInput" type="file" accept="application/json,.json"></label>
+    </div>
+    <p class="backup-note">Backups contain schedules and statistics, not card text or images.</p>
+  </dialog>
+  <dialog id="themeDialog" class="theme-dialog">
+    <button id="closeThemes" class="dialog-close" aria-label="Close">×</button>
+    <div class="eyebrow">make it yours</div>
+    <h2>Choose a theme</h2>
+    <div class="theme-grid">
+      <button class="theme-choice" data-theme="dark"><span class="theme-swatches"><i style="--swatch:#111214"></i><i style="--swatch:#e2b714"></i><i style="--swatch:#d8d6cf"></i></span><b>Dark</b><small>the original</small></button>
+      <button class="theme-choice" data-theme="light"><span class="theme-swatches"><i style="--swatch:#eeeae1"></i><i style="--swatch:#e2b714"></i><i style="--swatch:#34332f"></i></span><b>Light</b><small>soft paper</small></button>
+      <button class="theme-choice" data-theme="cyberspace"><span class="theme-swatches"><i style="--swatch:#00b8a9"></i><i style="--swatch:#f8f3e3"></i><i style="--swatch:#007c73"></i></span><b>Cyberspace</b><small>bright terminal</small></button>
+      <button class="theme-choice" data-theme="serika"><span class="theme-swatches"><i style="--swatch:#e1e1e3"></i><i style="--swatch:#e2b714"></i><i style="--swatch:#323437"></i></span><b>Serika</b><small>classic yellow</small></button>
+      <button class="theme-choice" data-theme="dracula"><span class="theme-swatches"><i style="--swatch:#282a36"></i><i style="--swatch:#bd93f9"></i><i style="--swatch:#f8f8f2"></i></span><b>Dracula</b><small>violet night</small></button>
+      <button class="theme-choice" data-theme="nord"><span class="theme-swatches"><i style="--swatch:#2e3440"></i><i style="--swatch:#88c0d0"></i><i style="--swatch:#d8dee9"></i></span><b>Nord</b><small>arctic blue</small></button>
+      <button class="theme-choice" data-theme="gruvbox"><span class="theme-swatches"><i style="--swatch:#282828"></i><i style="--swatch:#fabd2f"></i><i style="--swatch:#ebdbb2"></i></span><b>Gruvbox</b><small>warm retro</small></button>
+      <button class="theme-choice" data-theme="miami"><span class="theme-swatches"><i style="--swatch:#f35588"></i><i style="--swatch:#05dfd7"></i><i style="--swatch:#fff5f8"></i></span><b>Miami</b><small>neon coast</small></button>
+    </div>
+  </dialog>
+  <style>
+    .learn-controls{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:28px}.learn-controls button{border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);padding:12px 6px;cursor:pointer}.learn-controls button:hover{color:var(--text);border-color:var(--muted)}.learn-controls .learn-again{color:var(--bad)}.learn-controls .learn-hard{color:#e7a95c}.learn-controls .learn-good{color:var(--good)}.learn-controls .learn-easy{color:#63b3ed}.learn-controls kbd{margin-right:5px}.learn-controls small{display:block;font-size:7px;color:var(--faint);margin-top:5px}.feedback .learn-answer{color:var(--text);font-size:16px;line-height:1.65}body.cyberspace{--bg:#00b8a9;--panel:#009c91;--panel2:#008d83;--text:#f8f3e3;--muted:#006f68;--faint:#007c73;--border:#009187;--accent:#f8f3e3;--accent-dark:#009187;--good:#f8f3e3;--bad:#da3333;--shadow:0 24px 80px rgba(0,75,69,.18)}body.cyberspace .import-card textarea{background:#00aa9d}body.cyberspace .primary-button{color:#00756d}body.serika{--bg:#e1e1e3;--panel:#d1d3d4;--panel2:#c5c7c8;--text:#323437;--muted:#646669;--faint:#929497;--border:#c4c5c6;--accent:#e2b714;--accent-dark:#f0e7bd;--good:#4f8f62;--bad:#ca4754;--shadow:0 24px 80px rgba(50,52,55,.1)}body.serika .import-card textarea{background:#d8d8da}body.dracula{--bg:#282a36;--panel:#343746;--panel2:#3d4051;--text:#f8f8f2;--muted:#8c91b6;--faint:#6272a4;--border:#44475a;--accent:#bd93f9;--accent-dark:#3d3453;--good:#50fa7b;--bad:#ff5555;--shadow:0 24px 80px rgba(10,10,18,.28)}body.dracula .import-card textarea{background:#2d2f3c}body.nord{--bg:#2e3440;--panel:#3b4252;--panel2:#434c5e;--text:#eceff4;--muted:#81a1c1;--faint:#61758b;--border:#4c566a;--accent:#88c0d0;--accent-dark:#34454f;--good:#a3be8c;--bad:#bf616a;--shadow:0 24px 80px rgba(20,24,32,.3)}body.nord .import-card textarea{background:#343b49}body.gruvbox{--bg:#282828;--panel:#3c3836;--panel2:#504945;--text:#ebdbb2;--muted:#a89984;--faint:#7c6f64;--border:#504945;--accent:#fabd2f;--accent-dark:#463d25;--good:#b8bb26;--bad:#fb4934;--shadow:0 24px 80px rgba(0,0,0,.25)}body.gruvbox .import-card textarea{background:#32302f}body.miami{--bg:#f35588;--panel:#df4777;--panel2:#c93d69;--text:#fff5f8;--muted:#8b294d;--faint:#a52f59;--border:#dd4675;--accent:#05dfd7;--accent-dark:#c83c68;--good:#a2ff00;--bad:#5b1732;--shadow:0 24px 80px rgba(109,20,53,.18)}body.miami .import-card textarea{background:#e64c7e}body.miami .primary-button{color:#155c5a}.calendar-dialog{width:min(900px,calc(100% - 30px))}.calendar-months,.calendar-legend,.backup-actions{display:flex;align-items:center}.calendar-months{justify-content:space-between;color:var(--muted);font-size:9px;margin:24px 0 9px}.heatmap{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;grid-auto-columns:11px;gap:3px;overflow-x:auto;padding-bottom:7px}.heat-cell,.calendar-legend i{background:var(--border);border-radius:2px}.heat-cell{width:11px;height:11px}.heat-cell[data-level="1"],.calendar-legend i[data-level="1"]{background:#557a3e}.heat-cell[data-level="2"],.calendar-legend i[data-level="2"]{background:#76a94d}.heat-cell[data-level="3"],.calendar-legend i[data-level="3"]{background:#9bd35b}.heat-cell[data-level="4"],.calendar-legend i[data-level="4"]{background:var(--accent)}.calendar-legend{justify-content:flex-end;gap:4px;color:var(--faint);font-size:8px;margin-top:6px}.calendar-legend i{width:10px;height:10px}.calendar-stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:9px;margin:26px 0 18px}.calendar-stats div{padding:18px;border-right:1px solid var(--border)}.calendar-stats div:last-child{border:0}.calendar-stats strong,.calendar-stats span{display:block}.calendar-stats strong{color:var(--accent);font-size:20px}.calendar-stats span{color:var(--muted);font-size:8px;margin-top:5px}.backup-actions{gap:8px}.backup-actions label{display:inline-block}.backup-actions a{text-decoration:none}.backup-actions input{display:none}.backup-note{font-size:8px;color:var(--faint)}body.cyberspace .heat-cell[data-level="1"],body.cyberspace .calendar-legend i[data-level="1"]{background:#007d74}body.cyberspace .heat-cell[data-level="2"],body.cyberspace .calendar-legend i[data-level="2"]{background:#f4df76}body.cyberspace .heat-cell[data-level="3"],body.cyberspace .calendar-legend i[data-level="3"]{background:#f7eaa8}.theme-dialog{width:min(620px,calc(100% - 30px))}.theme-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:25px}.theme-choice{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;padding:14px;text-align:left;cursor:pointer;position:relative}.theme-choice:hover,.theme-choice[aria-pressed="true"]{border-color:var(--accent)}.theme-choice[aria-pressed="true"]:after{content:"✓";position:absolute;right:13px;top:12px;color:var(--accent)}.theme-choice b,.theme-choice small{display:block}.theme-choice b{font-size:11px;margin-top:10px}.theme-choice small{font-size:8px;color:var(--muted);margin-top:4px}.theme-swatches{display:flex;gap:4px}.theme-swatches i{width:18px;height:12px;border-radius:3px;background:var(--swatch);border:1px solid rgba(127,127,127,.25)}.credits{border-top:1px solid var(--border);margin-top:24px;padding-top:18px}.credits span,.credits strong{display:block}.credits span{color:var(--faint);font-size:8px;text-transform:uppercase;letter-spacing:.12em}.credits strong{font-size:10px;color:var(--muted);font-weight:400;margin-top:6px}@media(max-width:650px){.learn-controls{grid-template-columns:1fr 1fr}.calendar-stats{grid-template-columns:1fr 1fr}.calendar-stats div:nth-child(2){border-right:0}.calendar-stats div{border-bottom:1px solid var(--border)}.theme-grid{grid-template-columns:1fr}}
+  </style>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="vendor/fzstd.min.js"></script>
+  <script src="vendor/sql-wasm-binary.js"></script>
+  <script src="vendor/sql-wasm.js"></script>
+  <script src="library.js"></script>
+  <script src="drop-import.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
