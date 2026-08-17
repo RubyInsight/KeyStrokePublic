@@ -23,14 +23,14 @@ No installation is needed. Open the link in Chrome, Edge, Safari, or Firefox.
 ## Start studying
 
 1. Open the link.
-2. Drag in an Anki `.apkg` file, or choose **choose a file**.
+2. Drag in an Anki `.apkg` or `.colpkg` file, or choose **choose a file**.
 3. Select a deck and study.
 
-Keystroke can also import `.txt`, `.tsv`, and `.csv` files. Anki packages can keep their deck separation and included images.
+Keystroke can also import `.txt`, `.tsv`, and `.csv` files. Both deck packages and full collection packages keep their deck separation and included images.
 
 ## Drag and drop
 
-Drag one `.apkg`, `.txt`, `.tsv`, or `.csv` file anywhere onto the Keystroke page. The same import also works with **choose a file**, which is usually easier on phones and tablets.
+Drag one `.apkg`, `.colpkg`, `.txt`, `.tsv`, or `.csv` file anywhere onto the Keystroke page. The same import also works with **choose a file**, which is usually easier on phones and tablets.
 
 Import one file at a time and wait for the success message before starting a session or importing another file.
 
@@ -49,10 +49,10 @@ Tabs and CSV are also supported. For a larger set, place terms in the first spre
 
 ## How images work
 
-Use an Anki `.apkg` file when cards contain images:
+Use an Anki `.apkg` or `.colpkg` file when cards contain images:
 
 1. In Anki, choose **File → Export**.
-2. Select **Anki Deck Package (`.apkg`)**.
+2. Select **Anki Deck Package (`.apkg`)** for one deck, or **Anki Collection Package (`.colpkg`)** for an entire collection.
 3. Turn on **Include media**.
 4. Drag the exported file onto Keystroke or use **choose a file**.
 
@@ -60,9 +60,9 @@ Keystroke preserves images referenced by generated Anki cards. PNG, JPEG, GIF, W
 
 Every generated Anki database card is imported. Each cloze deletion becomes its own typing prompt. Image-occlusion cards follow Anki's Hide All, Guess One and Hide One, Guess One behavior. During review, use **hide masks** / **show masks** or press **M**. Use **expand image** or press **E** to open a larger view and zoom from 50% to 300%.
 
-Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Use `.apkg` when an exact match to Anki's generated cards matters. Plain-text, TSV, and CSV exports do not contain Anki's card table or media files, so they can preserve study text but cannot guarantee the same generated image-occlusion set.
+Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Use `.apkg` or `.colpkg` when an exact match to Anki's generated cards matters. Plain-text, TSV, and CSV exports do not contain Anki's card table or media files, so they can preserve study text but cannot guarantee the same generated image-occlusion set.
 
-Keep the original `.apkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics—not card text or media.
+Keep the original `.apkg` or `.colpkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics—not card text or media.
 
 ## Privacy
 

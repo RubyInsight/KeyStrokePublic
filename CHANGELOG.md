@@ -4,6 +4,19 @@ All notable changes to Keystroke are recorded here.
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-08-17
+
+### Added
+
+- Direct imports of Anki Collection Package (`.colpkg`) files, commonly used when exporting an entire collection on Windows or macOS
+- Per-deck card totals in the import confirmation for collections containing up to five decks
+- Clear progress after reading the Anki database, including the exact generated-card and used-deck counts
+
+### Fixed
+
+- Collection exports no longer appear to leave Keystroke at zero decks simply because their filename ends in `.colpkg`
+- Invalid ZIP folders and genuinely empty Anki packages now produce specific recovery instructions
+
 ## [1.3.2] - 2026-08-17
 
 ### Added

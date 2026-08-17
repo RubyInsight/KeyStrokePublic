@@ -307,7 +307,9 @@
     if (!AnkiCards) throw new Error('The Anki card converter did not load.');
     if (!file || file.size > MAX_PACKAGE_BYTES) throw new Error('That Anki package is larger than the 500 MB safety limit.');
     onProgress('Opening the Anki package…');
-    const zip = await window.JSZip.loadAsync(file);
+    let zip;
+    try { zip = await window.JSZip.loadAsync(file); }
+    catch { throw new Error('This is not a readable Anki package. Export it from Anki as Deck Package (.apkg) or Collection Package (.colpkg), not as a .zip folder.'); }
     const modern = Boolean(zip.file('collection.anki21b'));
     const collectionName = modern ? 'collection.anki21b' : ['collection.anki21', 'collection.anki2'].find(name => zip.file(name));
     if (!collectionName) throw new Error('This file does not contain a readable Anki collection.');
@@ -331,6 +333,10 @@
     } finally {
       db.close();
     }
+
+    if (!rows.length) throw new Error('This Anki package contains 0 generated cards. In Anki, export the deck again and make sure the deck is not empty.');
+    const usedDeckNames = new Set(rows.map(row => decks.get(String(row.did)) || 'Unfiled'));
+    onProgress(`Found ${rows.length} Anki card${rows.length===1?'':'s'} across ${usedDeckNames.size} deck${usedDeckNames.size===1?'':'s'}. Converting…`);
 
     const mediaByName = await mediaLookup(zip, modern);
 
@@ -394,7 +400,7 @@
       card.definitionMedia = card.definitionMedia.map(name => keyByName.get(name)).filter(Boolean);
     }
 
-    const packageName = file.name.replace(/\.apkg$/i, '');
+    const packageName = file.name.replace(/\.(?:apkg|colpkg)$/i, '');
     onProgress('Saving the deck on this device…');
     await replaceLibrary(cards, media, packageName);
     return { cards, name: packageName, loadedImages, missingImages, ...importStats };

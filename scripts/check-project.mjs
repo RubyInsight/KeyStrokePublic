@@ -44,7 +44,7 @@ if (!html.includes('id="importCard"') || !app.includes("document.addEventListene
   throw new Error('Drag-and-drop importing is missing.');
 }
 
-if (!html.includes('v1.3.2') || !macInfo.includes('<string>1.3.2</string>')) {
+if (!html.includes('v1.3.3') || !macInfo.includes('<string>1.3.3</string>')) {
   throw new Error('The web and native app versions are out of sync.');
 }
 

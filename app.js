@@ -138,7 +138,7 @@ async function load() {
   applyTheme(savedTheme,false);
   if(saved.source==='apkg'&&window.KeystrokeLibrary){
     try { const library=await window.KeystrokeLibrary.loadLibrary();if(library?.cards?.length){state.cards=library.cards;state.source='apkg';state.libraryName=library.name||saved.libraryName||'Anki collection';els.input.value='';els.input.placeholder=`${state.libraryName} is stored locally. Import another file or try the sample to replace it.`;setImportNotice(`${state.libraryName} restored from this device.`,`good`);}else throw new Error('missing library'); }
-    catch { state.source='text';state.libraryName='';state.cards=parseCards(els.input.value);setImportNotice('The saved Anki deck could not be restored. Import the .apkg again.','bad'); }
+    catch { state.source='text';state.libraryName='';state.cards=parseCards(els.input.value);setImportNotice('The saved Anki deck could not be restored. Import the .apkg or .colpkg again.','bad'); }
   } else state.cards=parseCards(els.input.value);
   refreshDeckSelector();save();
 }
@@ -150,19 +150,21 @@ function updateParse() {
 }
 async function importFile(file){
   if(!file)return;
-  if(!DropImport.supports(file.name))throw new Error('Use an .apkg, .txt, .tsv, or .csv file.');
-  if(/\.apkg$/i.test(file.name)){
-    setImportNotice('Opening the Anki package…');
+  if(!DropImport.supports(file.name))throw new Error('Use an .apkg, .colpkg, .txt, .tsv, or .csv file.');
+  if(/\.(?:apkg|colpkg)$/i.test(file.name)){
+    setImportNotice(`Opening ${file.name}…`);
     const imported=await window.KeystrokeLibrary.importApkg(file,message=>setImportNotice(message));
     state.cards=imported.cards;state.source='apkg';state.libraryName=imported.name;state.selectedDeck='*';els.input.value='';els.input.placeholder=`${imported.name} is stored locally. Import another file or try the sample to replace it.`;refreshDeckSelector();save();
     const imageText=imported.loadedImages?` and ${imported.loadedImages} image${imported.loadedImages===1?'':'s'}`:'';
     const missingText=imported.missingImages?` ${imported.missingImages} unsupported or missing image${imported.missingImages===1?' was':'s were'} skipped.`:'';
     const skippedText=imported.skippedCards?` ${imported.skippedCards} unusable card${imported.skippedCards===1?' was':'s were'} skipped.`:'';
     const occlusionText=imported.imageOcclusionCards?` ${imported.imageOcclusionCards} image occlusion card${imported.imageOcclusionCards===1?' uses':'s use'} self-rated Learn mode.`:'';
-    setImportNotice(`Imported ${imported.cards.length} of ${imported.sourceCards||imported.cards.length} Anki cards across ${new Set(imported.cards.map(card=>card.deck)).size} decks${imageText}.${occlusionText}${skippedText}${missingText}`,'good');
+    const deckCounts=[...imported.cards.reduce((counts,card)=>counts.set(card.deck,(counts.get(card.deck)||0)+1),new Map())].sort((a,b)=>a[0].localeCompare(b[0]));
+    const deckSummary=deckCounts.length<=5?` ${deckCounts.map(([deck,count])=>`${displayDeck(deck)}: ${count}`).join(' · ')}`:'';
+    setImportNotice(`Imported ${imported.cards.length} of ${imported.sourceCards||imported.cards.length} Anki cards across ${deckCounts.length} decks${imageText}.${occlusionText}${skippedText}${missingText}${deckSummary}`,'good');
   }else{
     state.selectedDeck='*';els.input.value=await file.text();const needsApkg=/image-occlusion:/i.test(els.input.value);updateParse();
-    setImportNotice(`Imported ${state.cards.length} card${state.cards.length===1?'':'s'} from ${file.name}.${needsApkg?' Image files are not included in Anki text exports; import an .apkg to study those image cards.':''}`,'good');
+    setImportNotice(`Imported ${state.cards.length} card${state.cards.length===1?'':'s'} from ${file.name}.${needsApkg?' Image files are not included in Anki text exports; import an .apkg or .colpkg to study those image cards.':''}`,'good');
   }
 }
 async function handleImportFile(file){
