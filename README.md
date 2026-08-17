@@ -56,11 +56,11 @@ Use an Anki `.apkg` file when cards contain images:
 3. Turn on **Include media**.
 4. Drag the exported file onto Keystroke or use **choose a file**.
 
-Keystroke preserves images referenced by the first two card fields. PNG, JPEG, GIF, WebP, AVIF, and BMP images up to 50 MB each are supported. Unsupported, missing, or oversized images are skipped and reported after import.
+Keystroke preserves images referenced by generated Anki cards. PNG, JPEG, GIF, WebP, AVIF, and BMP images up to 50 MB each are supported. Unsupported, missing, or oversized images are skipped and reported after import.
 
-Every generated Anki card is imported. Each cloze deletion becomes its own typing prompt, while image-occlusion cards show a masked image followed by an unmasked reveal in self-rated Learn mode.
+Every generated Anki database card is imported. Each cloze deletion becomes its own typing prompt. Image-occlusion cards follow Anki's Hide All, Guess One and Hide One, Guess One behavior. During review, use **hide masks** / **show masks** or press **M**. Use **expand image** or press **E** to open a larger view and zoom from 50% to 300%.
 
-Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Plain-text, TSV, and CSV imports cannot preserve image files, so use `.apkg` for image cards.
+Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Use `.apkg` when an exact match to Anki's generated cards matters. Plain-text, TSV, and CSV exports do not contain Anki's card table or media files, so they can preserve study text but cannot guarantee the same generated image-occlusion set.
 
 Keep the original `.apkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics—not card text or media.
 

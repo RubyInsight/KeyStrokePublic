@@ -36,27 +36,88 @@
     return Number.isFinite(number) ? Math.min(1, Math.max(0, number)) : null;
   }
 
-  function parseImageOcclusions(html, cardOrdinal) {
+  function splitShapeSegments(value) {
+    const segments = [];
+    let current = '';
+    let escaped = false;
+    for (const character of String(value || '')) {
+      if (escaped) { current += character; escaped = false; }
+      else if (character === '\\') escaped = true;
+      else if (character === ':') { segments.push(current); current = ''; }
+      else current += character;
+    }
+    segments.push(current);
+    return segments;
+  }
+
+  function shapeFromToken(token, ordinal) {
+    const segments = splitShapeSegments(token);
+    const shape = (segments.shift() || 'rect').toLowerCase();
+    const values = {};
+    for (const segment of segments) {
+      const separator = segment.indexOf('=');
+      if (separator > 0) values[segment.slice(0, separator)] = segment.slice(separator + 1);
+    }
+    const left = finiteFraction(values.left);
+    const top = finiteFraction(values.top);
+    const angle = Number(values.angle);
+    const common = {
+      shape,
+      ordinal: Number(ordinal),
+      occludeInactive: values.oi === '1',
+      angle: Number.isFinite(angle) ? angle : 0
+    };
+
+    if (shape === 'text') {
+      if (left == null || top == null || !values.text) return null;
+      return { ...common, left, top, text: values.text, annotation: true };
+    }
+    if (shape === 'polygon') {
+      const points = String(values.points || '').split(/\s+/).map(pair => {
+        const [x, y] = pair.split(',').map(finiteFraction);
+        return x == null || y == null ? null : { x, y };
+      }).filter(Boolean);
+      if (left == null || top == null || points.length < 3) return null;
+      const minX = Math.min(...points.map(point => point.x));
+      const minY = Math.min(...points.map(point => point.y));
+      return { ...common, left: 0, top: 0, width: 1, height: 1, points: points.map(point => ({ x: point.x + left - minX, y: point.y + top - minY })) };
+    }
+
+    let width = finiteFraction(values.width);
+    let height = finiteFraction(values.height);
+    if (shape === 'ellipse') {
+      const rx = finiteFraction(values.rx);
+      const ry = finiteFraction(values.ry);
+      if (width == null && rx != null) width = Math.min(1, rx * 2);
+      if (height == null && ry != null) height = Math.min(1, ry * 2);
+    }
+    if ([left, top, width, height].some(value => value == null)) return null;
+    return { ...common, left, top, width, height };
+  }
+
+  function parseImageOcclusionData(html, cardOrdinal) {
     const target = Number(cardOrdinal) + 1;
-    const results = [];
+    const shapes = [];
     const pattern = /\{\{c(\d+)::image-occlusion:([^}]+)\}\}/gi;
     for (const match of String(html || '').matchAll(pattern)) {
-      if (Number(match[1]) !== target) continue;
-      const segments = match[2].split(':');
-      const shape = segments.shift() || 'rect';
-      const values = {};
-      for (const segment of segments) {
-        const separator = segment.indexOf('=');
-        if (separator > 0) values[segment.slice(0, separator)] = segment.slice(separator + 1);
-      }
-      const left = finiteFraction(values.left);
-      const top = finiteFraction(values.top);
-      const width = finiteFraction(values.width);
-      const height = finiteFraction(values.height);
-      if ([left, top, width, height].some(value => value == null)) continue;
-      results.push({ shape, left, top, width, height });
+      const shape = shapeFromToken(match[2], match[1]);
+      if (shape) shapes.push(shape);
     }
-    return results;
+    const annotations = shapes.filter(shape => shape.annotation);
+    const masks = shapes.filter(shape => !shape.annotation);
+    const active = masks.filter(shape => shape.ordinal === target);
+    const inactive = masks.filter(shape => shape.ordinal !== target && shape.occludeInactive);
+    return {
+      front: [...annotations, ...active, ...inactive],
+      back: [...annotations, ...inactive],
+      active,
+      inactive,
+      target
+    };
+  }
+
+  function parseImageOcclusions(html, cardOrdinal) {
+    return parseImageOcclusionData(html, cardOrdinal).active;
   }
 
   function namedIndex(names, pattern) {
@@ -83,6 +144,7 @@
       const extra = extraIndexes.map(index => fields[index]).filter(visibleText).join('<br><br>');
       const imageHtml = imageField >= 0 ? fields[imageField] : '';
       const header = headerField >= 0 ? fields[headerField] : '';
+      const occlusions = parseImageOcclusionData(fields[occlusionField] || '', row.ord);
       return {
         kind: 'image-occlusion',
         manual: true,
@@ -91,7 +153,8 @@
         answerExtraHtml: '',
         termMediaHtml: [imageHtml],
         definitionMediaHtml: [imageHtml, extra],
-        termOcclusions: parseImageOcclusions(fields[occlusionField] || '', row.ord)
+        termOcclusions: occlusions.front,
+        definitionOcclusions: occlusions.back
       };
     }
 
@@ -109,13 +172,26 @@
           answerExtraHtml: extras.join('<br><br>'),
           termMediaHtml: [parsed.questionHtml],
           definitionMediaHtml: [fields[sourceIndex], ...extras],
-          termOcclusions: []
+          termOcclusions: [],
+          definitionOcclusions: []
         };
       }
     }
 
     const usable = usableIndexes(fields);
-    if (!usable.length) return null;
+    if (!usable.length) {
+      return {
+        kind: 'empty',
+        manual: true,
+        termHtml: `Anki card ${row.cid || target}`,
+        definitionHtml: 'This Anki card has no visible text or supported image.',
+        answerExtraHtml: '',
+        termMediaHtml: fields,
+        definitionMediaHtml: fields,
+        termOcclusions: [],
+        definitionOcclusions: []
+      };
+    }
     let front = namedIndex(names, /^(front|question|term|word|prompt)$/i);
     let back = namedIndex(names, /^(back|answer|definition|meaning)$/i);
     if (front < 0 || !visibleText(fields[front])) front = usable[0];
@@ -138,9 +214,10 @@
       answerExtraHtml: extraIndexes.map(index => fields[index]).join('<br><br>'),
       termMediaHtml: [fields[front]],
       definitionMediaHtml: [fields[back], ...extraIndexes.map(index => fields[index])],
-      termOcclusions: []
+      termOcclusions: [],
+      definitionOcclusions: []
     };
   }
 
-  return { convertCard, parseCloze, parseImageOcclusions, visibleText, unique };
+  return { convertCard, parseCloze, parseImageOcclusions, parseImageOcclusionData, visibleText, unique };
 });

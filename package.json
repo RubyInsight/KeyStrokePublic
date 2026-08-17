@@ -1,0 +1,11 @@
+{
+  "name": "keystroke",
+  "version": "1.3.2",
+  "private": true,
+  "description": "A local-first, keyboard-first study app for Anki cards.",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "check": "node --check anki-card.js && node --check library.js && node --check app.js && node scripts/test-anki-card.cjs && node scripts/test-drop-import.cjs && node scripts/check-project.mjs",
+    "build:mac": "zsh scripts/build-macos-app.zsh"
+  }
+}

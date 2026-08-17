@@ -358,6 +358,7 @@
         termMedia: termImageNames,
         definitionMedia: definitionImageNames,
         termOcclusions: converted.termOcclusions,
+        definitionOcclusions: converted.definitionOcclusions,
         manual: converted.manual,
         ankiKind: converted.kind,
         ankiCardId: String(row.cid),
@@ -365,7 +366,8 @@
         ankiCardOrdinal: Number(row.ord)
       });
     }
-    if (!cards.length) throw new Error('No usable two-field cards were found in this package.');
+    if (!cards.length) throw new Error('No Anki cards were found in this package.');
+    if (cards.length !== rows.length) throw new Error(`The import stopped safely because ${rows.length - cards.length} Anki card${rows.length - cards.length === 1 ? '' : 's'} could not be preserved.`);
 
     const importId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const media = new Map();

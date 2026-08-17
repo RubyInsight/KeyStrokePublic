@@ -4,7 +4,7 @@ const STORAGE = 'keydeck.v1';
 const THEMES = ['dark','light','cyberspace','serika','dracula','nord','gruvbox','miami'];
 const DropImport = window.KeystrokeDrop;
 
-const els = { setup: $('#setupView'), practice: $('#practiceView'), results: $('#resultsView'), importCard: $('#importCard'), input: $('#cardInput'), file: $('#fileInput'), parse: $('#parseStatus'), start: $('#startBtn'), answer: $('#answerInput'), form: $('#answerForm'), learnControls: $('#learnControls'), prompt: $('#promptText'), direction: $('#directionLabel'), feedback: $('#feedback'), bar: $('#progressBar'), progress: $('#progressStat'), accuracy: $('#accuracyStat'), wpm: $('#wpmStat'), streak: $('#streakStat'), missedToggle: $('#missedToggle'), deckPicker: $('#deckPicker'), deckSelect: $('#deckSelect'), deleteDeck: $('#deleteDeckBtn'), importNotice: $('#importNotice'), sessionDeck: $('#sessionDeck') };
+const els = { setup: $('#setupView'), practice: $('#practiceView'), results: $('#resultsView'), importCard: $('#importCard'), input: $('#cardInput'), file: $('#fileInput'), parse: $('#parseStatus'), start: $('#startBtn'), answer: $('#answerInput'), form: $('#answerForm'), learnControls: $('#learnControls'), prompt: $('#promptText'), direction: $('#directionLabel'), feedback: $('#feedback'), bar: $('#progressBar'), progress: $('#progressStat'), accuracy: $('#accuracyStat'), wpm: $('#wpmStat'), streak: $('#streakStat'), missedToggle: $('#missedToggle'), deckPicker: $('#deckPicker'), deckSelect: $('#deckSelect'), deleteDeck: $('#deleteDeckBtn'), importNotice: $('#importNotice'), sessionDeck: $('#sessionDeck'), mediaDialog: $('#mediaDialog'), mediaStage: $('#mediaStage'), mediaZoomLayer: $('#mediaZoomLayer'), mediaDialogMasks: $('#mediaDialogMasks'), mediaZoomLabel: $('#mediaZoomLabel') };
 const DEFAULT_CARD_PLACEHOLDER = els.input.getAttribute('placeholder');
 let state = { cards: [], source: 'text', libraryName: '', selectedDeck: '*', mode: 'term-def', queue: [], index: 0, attempts: 0, correct: 0, streak: 0, bestStreak: 0, missed: [], reviews: {}, activity: {}, startedAt: 0, typedChars: 0, answered: false };
 let mediaRenderToken = 0;
@@ -12,22 +12,36 @@ let mediaUrls = [];
 let deletingDeck = false;
 let importingFile = false;
 let fileDragDepth = 0;
+let mediaZoom = 1;
 
 function parseCards(raw) {
   const allLines = raw.replace(/^\uFEFF/, '').split(/\r?\n/);
-  const isAnki = allLines.some(line => /^#deck column:/i.test(line));
+  const isAnki = allLines.some(line => /^#(?:separator|html|deck column|notetype column|tags column|guid column):/i.test(line));
+  const columnNumber = name => {const match=allLines.find(line=>new RegExp(`^#${name} column:`, 'i').test(line))?.match(/:(\d+)/);return match?Number(match[1])-1:-1};
+  const deckColumn=columnNumber('deck');
+  const metadataColumns=new Set(['deck','notetype','tags','guid'].map(columnNumber).filter(index=>index>=0));
   const lines = allLines.map(x => x.trim()).filter(x => x && !x.startsWith('#'));
   if (!lines.length) return [];
   const delimiter = lines.some(l => l.includes('\t')) ? '\t' : lines.some(l => l.includes(';')) ? ';' : ',';
   const splitCsv = line => {
-    if (delimiter !== ',') return line.split(delimiter);
     const out=[]; let cur='', quote=false;
-    for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(quote&&line[i+1]==='"'){cur+='"';i++;}else quote=!quote;}else if(c===','&&!quote){out.push(cur);cur='';}else cur+=c;} out.push(cur); return out;
+    for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(quote&&line[i+1]==='"'){cur+='"';i++;}else quote=!quote;}else if(c===delimiter&&!quote){out.push(cur);cur='';}else cur+=c;} out.push(cur); return out;
   };
-  return lines.map(splitCsv).map(parts => {
-    if (isAnki && parts.length >= 3) return { deck: cleanField(parts[0]), term: cleanField(parts[1]), definition: cleanField(parts[2]) };
-    return { deck: '', term: cleanField(parts[0] || ''), definition: cleanField(parts.slice(1).join(delimiter)) };
-  }).filter(card => card.term && card.definition);
+  return lines.map(splitCsv).flatMap((parts,rowIndex) => {
+    const fieldIndexes=parts.map((_,index)=>index).filter(index=>!metadataColumns.has(index));
+    const frontRaw=isAnki?parts[fieldIndexes[0]]||'':parts[0]||'';
+    const backRaw=isAnki?parts[fieldIndexes[1]]||'':parts.slice(1).join(delimiter);
+    const deck=isAnki&&deckColumn>=0?cleanField(parts[deckColumn]):'';
+    if(isAnki){
+      const ordinals=[...new Set([...frontRaw.matchAll(/\{\{c(\d+)::/gi)].map(match=>Number(match[1])))].sort((a,b)=>a-b);
+      if(ordinals.length&&/image-occlusion:/i.test(frontRaw)){const header=cleanField(parts[fieldIndexes[2]]||''),extra=cleanField(parts[fieldIndexes[3]]||'');return ordinals.map(ordinal=>({deck,term:header||`Image occlusion ${ordinal}`,definition:extra||'Re-import this export as an .apkg to study its image.',manual:true}))}
+      if(ordinals.length&&window.KeystrokeAnkiCards){return ordinals.map(ordinal=>{const parsed=window.KeystrokeAnkiCards.parseCloze(frontRaw,ordinal-1);return {deck,term:cleanField(parsed.questionHtml),definition:cleanField(parsed.answers.join('<br>')),manual:false}}).filter(card=>card.term&&card.definition)}
+    }
+    const term=cleanField(frontRaw),definition=cleanField(backRaw);
+    if(term&&definition)return [{deck,term,definition}];
+    if(isAnki&&(term||definition))return [{deck,term:term||`Anki row ${rowIndex+1}`,definition:definition||'This exported Anki row has no separate answer.',manual:true}];
+    return [];
+  });
 }
 
 function cleanField(value) {
@@ -147,8 +161,8 @@ async function importFile(file){
     const occlusionText=imported.imageOcclusionCards?` ${imported.imageOcclusionCards} image occlusion card${imported.imageOcclusionCards===1?' uses':'s use'} self-rated Learn mode.`:'';
     setImportNotice(`Imported ${imported.cards.length} of ${imported.sourceCards||imported.cards.length} Anki cards across ${new Set(imported.cards.map(card=>card.deck)).size} decks${imageText}.${occlusionText}${skippedText}${missingText}`,'good');
   }else{
-    state.selectedDeck='*';els.input.value=await file.text();updateParse();
-    setImportNotice(`Imported ${state.cards.length} card${state.cards.length===1?'':'s'} from ${file.name}.`,'good');
+    state.selectedDeck='*';els.input.value=await file.text();const needsApkg=/image-occlusion:/i.test(els.input.value);updateParse();
+    setImportNotice(`Imported ${state.cards.length} card${state.cards.length===1?'':'s'} from ${file.name}.${needsApkg?' Image files are not included in Anki text exports; import an .apkg to study those image cards.':''}`,'good');
   }
 }
 async function handleImportFile(file){
@@ -206,14 +220,33 @@ function startSession(cards=null) {
 function current() { return state.queue[state.index]; }
 function norm(s) { return s.normalize('NFKC').trim().toLowerCase().replace(/[\s\u00a0]+/g,' ').replace(/[.,;:!?]+$/,''); }
 function stats() { const mins=Math.max((Date.now()-state.startedAt)/60000,1/60); return {accuracy:state.attempts?Math.round(state.correct/state.attempts*100):100,wpm:Math.round((state.typedChars/5)/mins)}; }
-function clearMediaUrls(){for(const url of mediaUrls)URL.revokeObjectURL(url);mediaUrls=[]}
+function clearMediaUrls(){if(els.mediaDialog?.open)els.mediaDialog.close();for(const url of mediaUrls)URL.revokeObjectURL(url);mediaUrls=[]}
+function appendMediaOverlays(frame,overlays=[]){
+  for(const overlay of overlays||[]){
+    if(overlay.annotation){const annotation=document.createElement('span');annotation.className='media-annotation';annotation.textContent=overlay.text||'';annotation.style.left=`${overlay.left*100}%`;annotation.style.top=`${overlay.top*100}%`;frame.appendChild(annotation);continue;}
+    const mask=document.createElement('i');mask.className=`media-occlusion${overlay.shape==='ellipse'?' is-ellipse':''}${overlay.shape==='polygon'?' is-polygon':''}`;
+    mask.style.left=`${overlay.left*100}%`;mask.style.top=`${overlay.top*100}%`;mask.style.width=`${overlay.width*100}%`;mask.style.height=`${overlay.height*100}%`;
+    if(overlay.points?.length)mask.style.clipPath=`polygon(${overlay.points.map(point=>`${point.x*100}% ${point.y*100}%`).join(',')})`;
+    if(overlay.angle)mask.style.transform=`rotate(${overlay.angle}deg)`;
+    frame.appendChild(mask);
+  }
+}
+function setMediaZoom(value){mediaZoom=Math.min(3,Math.max(.5,value));els.mediaZoomLayer.style.transform=`scale(${mediaZoom})`;els.mediaZoomLabel.textContent=`${Math.round(mediaZoom*100)}%`}
+function setMasksHidden(container,hidden,button=null){container.classList.toggle('masks-hidden',hidden);if(button){button.textContent=hidden?'show masks':'hide masks';button.setAttribute('aria-pressed',String(hidden))}}
+function openMediaDialog(url,name,overlays=[],masksHidden=false){
+  els.mediaZoomLayer.textContent='';
+  const frame=document.createElement('span');frame.className='media-frame media-dialog-frame';
+  const image=document.createElement('img');image.src=url;image.alt=name||'Expanded card image';frame.appendChild(image);appendMediaOverlays(frame,overlays);setMasksHidden(frame,masksHidden);els.mediaZoomLayer.appendChild(frame);
+  const hasMasks=overlays.some(overlay=>!overlay.annotation);els.mediaDialogMasks.classList.toggle('hidden',!hasMasks);setMasksHidden(frame,masksHidden,els.mediaDialogMasks);setMediaZoom(1);els.mediaStage.scrollTo(0,0);els.mediaDialog.showModal();
+}
 async function appendMedia(target,keys=[],occlusions=[],token=mediaRenderToken){
   if(!keys?.length||!window.KeystrokeLibrary)return;
   const gallery=document.createElement('div');gallery.className='card-media';target.appendChild(gallery);
   for(const [index,key] of keys.entries()){
-    try { const item=await window.KeystrokeLibrary.getMedia(key);if(token!==mediaRenderToken)return;if(!item?.blob)continue;const url=URL.createObjectURL(item.blob);mediaUrls.push(url);const frame=document.createElement('span');frame.className='media-frame';const image=document.createElement('img');image.src=url;image.alt=item.name||'Card image';image.loading='eager';frame.appendChild(image);if(index===0)for(const occlusion of occlusions||[]){const mask=document.createElement('i');mask.className=`media-occlusion${occlusion.shape==='ellipse'?' is-ellipse':''}`;mask.style.left=`${occlusion.left*100}%`;mask.style.top=`${occlusion.top*100}%`;mask.style.width=`${occlusion.width*100}%`;mask.style.height=`${occlusion.height*100}%`;frame.appendChild(mask)}gallery.appendChild(frame); }
+    try { const item=await window.KeystrokeLibrary.getMedia(key);if(token!==mediaRenderToken)return;if(!item?.blob)continue;const url=URL.createObjectURL(item.blob);mediaUrls.push(url);const frame=document.createElement('span');frame.className='media-frame';const image=document.createElement('img');image.src=url;image.alt=item.name||'Card image';image.loading='eager';const overlays=index===0?(occlusions||[]):[];frame.appendChild(image);appendMediaOverlays(frame,overlays);const expand=document.createElement('button');expand.className='media-expand';expand.type='button';expand.textContent='⛶';expand.title='Expand image';expand.setAttribute('aria-label',`Expand ${image.alt}`);expand.addEventListener('click',()=>openMediaDialog(url,image.alt,overlays,gallery.classList.contains('masks-hidden')));image.addEventListener('dblclick',()=>openMediaDialog(url,image.alt,overlays,gallery.classList.contains('masks-hidden')));frame.appendChild(expand);gallery.appendChild(frame); }
     catch { if(token===mediaRenderToken){const missing=document.createElement('span');missing.className='media-missing';missing.textContent='image unavailable';gallery.appendChild(missing);} }
   }
+  if(gallery.querySelector('.media-occlusion')){const actions=document.createElement('div');actions.className='media-actions';const toggle=document.createElement('button');toggle.className='media-mask-toggle';toggle.type='button';setMasksHidden(gallery,false,toggle);toggle.title='Temporarily hide or show image-occlusion masks';toggle.addEventListener('click',()=>setMasksHidden(gallery,!gallery.classList.contains('masks-hidden'),toggle));actions.appendChild(toggle);gallery.prepend(actions)}
   if(!gallery.childElementCount)gallery.remove();
 }
 function renderField(target,text,media,occlusions=[],token=mediaRenderToken){target.textContent='';if(text){const copy=document.createElement('div');copy.className='field-text';copy.textContent=text;target.appendChild(copy)}appendMedia(target,media,occlusions,token)}
@@ -227,11 +260,11 @@ function renderCard() {
   els.answer.placeholder=learning?'type what you remember…':'start typing…';
   els.direction.textContent=learning?'learn this card':termFirst?'type the definition':'type the term';
   const promptIsTerm=learning||termFirst;
-  renderField(els.prompt,promptIsTerm?q.card.term:q.card.definition,promptIsTerm?q.card.termMedia:q.card.definitionMedia,promptIsTerm?q.card.termOcclusions:[],mediaRenderToken);
+  renderField(els.prompt,promptIsTerm?q.card.term:q.card.definition,promptIsTerm?q.card.termMedia:q.card.definitionMedia,promptIsTerm?q.card.termOcclusions:q.card.definitionOcclusions,mediaRenderToken);
   if(learning)updateIntervals(q.card);
   const st=stats(); els.progress.textContent=`${state.index+1} / ${state.queue.length}`; els.accuracy.textContent=`${st.accuracy}%`; els.wpm.textContent=st.wpm; els.streak.textContent=state.streak; els.bar.style.width=`${state.index/state.queue.length*100}%`; els.answer.focus();
 }
-function revealLearn() { const q=current(); if(!q||q.direction!=='learn'||state.answered)return; const response=els.answer.value.trim(); state.answered=true; state.typedChars+=response.length; els.answer.disabled=true; els.feedback.className='feedback';els.feedback.textContent='';const responseLine=document.createElement('span');responseLine.textContent=response?`your answer: ${response}`:'no answer entered';const expected=document.createElement('div');expected.className='learn-answer';els.feedback.append(responseLine,expected);renderField(expected,q.card.definition,q.card.definitionMedia,[],mediaRenderToken);appendAnswerExtra(expected,q.card.answerExtra);els.learnControls.classList.remove('hidden'); }
+function revealLearn() { const q=current(); if(!q||q.direction!=='learn'||state.answered)return; const response=els.answer.value.trim(); state.answered=true; state.typedChars+=response.length; els.answer.disabled=true; els.feedback.className='feedback';els.feedback.textContent='';const responseLine=document.createElement('span');responseLine.textContent=response?`your answer: ${response}`:'no answer entered';const expected=document.createElement('div');expected.className='learn-answer';els.feedback.append(responseLine,expected);renderField(expected,q.card.definition,q.card.definitionMedia,q.card.definitionOcclusions,mediaRenderToken);appendAnswerExtra(expected,q.card.answerExtra);els.learnControls.classList.remove('hidden'); }
 function rateLearn(rating) { const q=current(); if(!q||q.direction!=='learn'||!state.answered)return; const recalled=rating!=='again',key=cardKey(q.card),previous=reviewFor(q.card)||{},interval=nextInterval(q.card,rating); state.reviews[key]={dueAt:Date.now()+interval.ms,intervalDays:interval.days,ease:interval.ease,reps:(previous.reps||0)+1,lapses:(previous.lapses||0)+(rating==='again'?1:0),lastRating:rating,reviewedAt:Date.now()};state.attempts++;recordActivity(recalled);if(recalled){state.correct++;state.streak++;state.bestStreak=Math.max(state.bestStreak,state.streak);}else state.streak=0; if(rating==='again'||rating==='hard'){if(!state.missed.some(card=>cardKey(card)===key))state.missed.push(q.card);if(rating==='again'&&q.repeats<2){const insertAt=Math.min(state.index+3,state.queue.length);state.queue.splice(insertAt,0,{...q,repeats:q.repeats+1});}} state.index++;renderCard(); }
 function submitAnswer() {
   if(current()?.direction==='learn') return revealLearn();
@@ -270,7 +303,8 @@ $('#againBtn').addEventListener('click',()=>startSession()); $('#missedBtn').add
 const dialog=$('#helpDialog'); $('#helpBtn').addEventListener('click',()=>dialog.showModal()); $('#closeHelp').addEventListener('click',()=>dialog.close()); dialog.addEventListener('click',e=>{if(e.target===dialog)dialog.close();});dialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();dialog.close()}});
 const calendarDialog=$('#calendarDialog');$('#calendarBtn').addEventListener('click',()=>{renderCalendar();calendarDialog.showModal()});$('#closeCalendar').addEventListener('click',()=>calendarDialog.close());calendarDialog.addEventListener('click',e=>{if(e.target===calendarDialog)calendarDialog.close()});calendarDialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();calendarDialog.close()}});
 const themeDialog=$('#themeDialog');$('#themeBtn').addEventListener('click',()=>{applyTheme(currentTheme(),false);themeDialog.showModal()});$('#closeThemes').addEventListener('click',()=>themeDialog.close());themeDialog.addEventListener('click',e=>{if(e.target===themeDialog)themeDialog.close()});themeDialog.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();themeDialog.close()}});$$('.theme-choice').forEach(button=>button.addEventListener('click',()=>{applyTheme(button.dataset.theme);themeDialog.close()}));
+$('#closeMedia').addEventListener('click',()=>els.mediaDialog.close());$('#mediaZoomOut').addEventListener('click',()=>setMediaZoom(mediaZoom-.25));$('#mediaZoomIn').addEventListener('click',()=>setMediaZoom(mediaZoom+.25));els.mediaDialogMasks.addEventListener('click',()=>{const frame=els.mediaZoomLayer.querySelector('.media-frame');if(frame)setMasksHidden(frame,!frame.classList.contains('masks-hidden'),els.mediaDialogMasks)});els.mediaDialog.addEventListener('click',e=>{if(e.target===els.mediaDialog)els.mediaDialog.close()});els.mediaDialog.addEventListener('close',()=>{els.mediaZoomLayer.textContent='';setMediaZoom(1)});
 $('#exportBackup').addEventListener('click',e=>{const backup={app:'keystroke',version:1,exportedAt:new Date().toISOString(),reviews:state.reviews,activity:state.activity,settings:{mode:state.mode,theme:currentTheme()}};e.currentTarget.href=`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(backup,null,2))}`;e.currentTarget.download=`keystroke-backup-${localDateKey()}.json`});
 $('#backupInput').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const backup=JSON.parse(await file.text());if(!['keystroke','keystroak','clean-type-recall'].includes(backup.app)||!backup.reviews||!backup.activity)throw new Error('Invalid backup');if(!confirm('Replace the current review schedule and activity history with this backup?'))return;state.reviews=backup.reviews;state.activity=backup.activity;if(backup.settings?.mode&&$(`input[name=mode][value="${backup.settings.mode}"]`)){state.mode=backup.settings.mode;$(`input[name=mode][value="${state.mode}"]`).checked=true}if(THEMES.includes(backup.settings?.theme))applyTheme(backup.settings.theme,false);save();renderCalendar();alert('Backup restored.')}catch{alert('That file is not a valid Keystroke backup.')}finally{e.target.value=''}});
-document.addEventListener('keydown',e=>{if(dialog.open||calendarDialog.open||themeDialog.open)return;if(e.key==='Escape'){if(!els.practice.classList.contains('hidden'))show(els.setup);return;}if(document.activeElement===els.input||document.activeElement===els.answer&&!els.answer.disabled)return;if(!els.practice.classList.contains('hidden')&&current()?.direction==='learn'){if(e.key==='Enter'){e.preventDefault();revealLearn();}const ratings={1:'again',2:'hard',3:'good',4:'easy'};if(ratings[e.key]){e.preventDefault();rateLearn(ratings[e.key]);}return;}if(!els.practice.classList.contains('hidden')&&state.answered&&e.key==='Enter'){e.preventDefault();next();return;}if(e.key==='r'&&!els.practice.classList.contains('hidden'))restart();if(e.key==='s'&&!els.practice.classList.contains('hidden')){$('#shuffleBtn').click();}if(e.key==='Enter'&&!els.setup.classList.contains('hidden')&&!els.start.disabled)startSession();});
+document.addEventListener('keydown',e=>{if(dialog.open||calendarDialog.open||themeDialog.open||els.mediaDialog.open)return;if(e.key==='Escape'){if(!els.practice.classList.contains('hidden'))show(els.setup);return;}if(document.activeElement===els.input||document.activeElement===els.answer&&!els.answer.disabled)return;const inPractice=!els.practice.classList.contains('hidden');if(inPractice&&e.key.toLowerCase()==='m'){const toggle=els.practice.querySelector('.media-mask-toggle');if(toggle){e.preventDefault();toggle.click();return;}}if(inPractice&&e.key.toLowerCase()==='e'){const expand=els.practice.querySelector('.media-expand');if(expand){e.preventDefault();expand.click();return;}}if(inPractice&&current()?.direction==='learn'){if(e.key==='Enter'){e.preventDefault();revealLearn();}const ratings={1:'again',2:'hard',3:'good',4:'easy'};if(ratings[e.key]){e.preventDefault();rateLearn(ratings[e.key]);}return;}if(inPractice&&state.answered&&e.key==='Enter'){e.preventDefault();next();return;}if(e.key==='r'&&inPractice)restart();if(e.key==='s'&&inPractice){$('#shuffleBtn').click();}if(e.key==='Enter'&&!els.setup.classList.contains('hidden')&&!els.start.disabled)startSession();});
 load().catch(()=>{setImportNotice('Keystroke could not restore its saved data. You can still import your cards again.','bad');refreshDeckSelector()});
