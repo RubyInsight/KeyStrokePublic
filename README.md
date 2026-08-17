@@ -10,6 +10,16 @@ Use the same link on **Windows, Mac, or Chromebook**:
 
 No installation is needed. Open the link in Chrome, Edge, Safari, or Firefox.
 
+## Preview
+
+[![Keystroke import and setup screen](previews/setup.svg)](https://rubyinsight.github.io/KeyStrokePublic/)
+
+*Import an Anki deck, choose a practice direction, and start studying.*
+
+[![Keystroke learning screen in the Cyberspace theme](previews/learn.svg)](https://rubyinsight.github.io/KeyStrokePublic/)
+
+*Type what you remember, check your answer, and rate it Again, Hard, Good, or Easy.*
+
 ## Start studying
 
 1. Open the link.
