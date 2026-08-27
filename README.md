@@ -28,6 +28,18 @@ No installation is needed. Open the link in Chrome, Edge, Safari, or Firefox.
 
 Keystroke can also import `.txt`, `.tsv`, and `.csv` files. Both deck packages and full collection packages keep their deck separation and included images.
 
+## Updating a class deck
+
+Leave **update matching decks** selected when your class posts a newer version of a deck, then import the new `.apkg` or `.colpkg` file.
+
+Keystroke matches cards by their stable Anki card ID. It preserves valid study progress, keeps unrelated decks, updates changed text and images, adds new cards, and removes cards no longer included in that matching deck. The result message shows added, updated, unchanged, and removed counts. Reimporting the same package does not create duplicates.
+
+Use **replace entire library** only when the new package should become your complete Keystroke library. Keystroke asks for confirmation before removing the other locally stored decks. Neither option changes the original deck in Anki.
+
+## Daily Learn limits
+
+Choose **anki learn** to set separate daily limits for new cards and due reviews. Use `0` for unlimited. A card counts once per day, while short Again and Hard repetitions stay available so a daily limit does not interrupt a card you already started learning.
+
 ## Drag and drop
 
 Drag one `.apkg`, `.colpkg`, `.txt`, `.tsv`, or `.csv` file anywhere onto the Keystroke page. The same import also works with **choose a file**, which is usually easier on phones and tablets.
@@ -62,7 +74,7 @@ Every generated Anki database card is imported. Each cloze deletion becomes its 
 
 Images are copied into private browser storage on that device. They are never uploaded to GitHub or a Keystroke server. Use `.apkg` or `.colpkg` when an exact match to Anki's generated cards matters. Plain-text, TSV, and CSV exports do not contain Anki's card table or media files, so they can preserve study text but cannot guarantee the same generated image-occlusion set.
 
-Keep the original `.apkg` or `.colpkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics—not card text or media.
+Keep the original `.apkg` or `.colpkg` file. Clearing browser data can remove stored cards and images, and a Keystroke progress backup contains schedules and statistics, not card text or media.
 
 ## Privacy
 
@@ -76,4 +88,4 @@ The website works on Mac without installing anything. Students who receive the s
 
 ## Sharing
 
-Share the website link above with classmates. This repository contains only the Keystroke app—not anyone's decks or study history. Search engines are asked not to index the site, but anyone who receives the link can open it.
+Share the website link above with classmates. This repository contains only the Keystroke app, not anyone's decks or study history. Search engines are asked not to index the site, but anyone who receives the link can open it.

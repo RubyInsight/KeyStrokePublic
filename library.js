@@ -11,6 +11,7 @@
   let databasePromise;
   let sqlPromise;
   const AnkiCards = window.KeystrokeAnkiCards;
+  const DeckUpdate = window.KeystrokeDeckUpdate;
 
   function requestResult(request) {
     return new Promise((resolve, reject) => {
@@ -54,6 +55,30 @@
     libraryStore.put({ key: 'current', cards, name, savedAt: new Date().toISOString() });
     for (const item of media.values()) mediaStore.put(item);
     await transactionDone(transaction);
+  }
+
+  async function storeImportedLibrary(incomingCards, media, name, strategy) {
+    if (!DeckUpdate) throw new Error('The safe deck updater did not load.');
+    const existing = await loadLibrary();
+    const plan = DeckUpdate.plan(existing?.cards || [], incomingCards, strategy);
+    const referencedMedia = DeckUpdate.referencedMedia(plan.cards);
+    const db = await openDatabase();
+    const transaction = db.transaction(['library', 'media'], 'readwrite');
+    const libraryStore = transaction.objectStore('library');
+    const mediaStore = transaction.objectStore('media');
+    const storedName = plan.stats.retained && existing?.name && existing.name !== name ? 'Keystroke library' : name;
+
+    libraryStore.put({ key: 'current', cards: plan.cards, name: storedName, savedAt: new Date().toISOString() });
+    const cursorRequest = mediaStore.openCursor();
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (!cursor) return;
+      if (!referencedMedia.has(cursor.key)) cursor.delete();
+      cursor.continue();
+    };
+    for (const item of media.values()) mediaStore.put(item);
+    await transactionDone(transaction);
+    return { ...plan, name: storedName };
   }
 
   async function loadLibrary() {
@@ -302,9 +327,10 @@
     return sqlPromise;
   }
 
-  async function importApkg(file, onProgress = () => {}) {
+  async function importApkg(file, onProgress = () => {}, strategy = 'update') {
     if (!window.JSZip) throw new Error('The offline Anki package reader did not load.');
     if (!AnkiCards) throw new Error('The Anki card converter did not load.');
+    if (!DeckUpdate) throw new Error('The safe deck updater did not load.');
     if (!file || file.size > MAX_PACKAGE_BYTES) throw new Error('That Anki package is larger than the 500 MB safety limit.');
     onProgress('Opening the Anki package…');
     let zip;
@@ -356,7 +382,7 @@
       if (converted.kind === 'cloze') importStats.clozeCards++;
       if (converted.kind === 'image-occlusion') importStats.imageOcclusionCards++;
       if (converted.manual) importStats.manualCards++;
-      cards.push({
+      const card = {
         deck: decks.get(String(row.did)) || 'Unfiled',
         term,
         definition,
@@ -370,7 +396,8 @@
         ankiCardId: String(row.cid),
         ankiNoteId: String(row.nid),
         ankiCardOrdinal: Number(row.ord)
-      });
+      };
+      cards.push(card);
     }
     if (!cards.length) throw new Error('No Anki cards were found in this package.');
     if (cards.length !== rows.length) throw new Error(`The import stopped safely because ${rows.length - cards.length} Anki card${rows.length - cards.length === 1 ? '' : 's'} could not be preserved.`);
@@ -378,6 +405,7 @@
     const importId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const media = new Map();
     const keyByName = new Map();
+    const mediaSignatureByName = new Map();
     let missingImages = 0;
     let loadedImages = 0;
     for (const name of referencedImages) {
@@ -393,18 +421,34 @@
       const key = `${importId}:${entry.zipKey}`;
       media.set(key, { key, blob, name, type });
       keyByName.set(name, key);
+      mediaSignatureByName.set(name, `${name}:${imageBytes.byteLength}:${DeckUpdate.hashBytes(imageBytes)}`);
       loadedImages++;
     }
     for (const card of cards) {
+      card.ankiContentHash = DeckUpdate.contentHash({
+        ...card,
+        termMedia: card.termMedia.map(name => mediaSignatureByName.get(name) || `missing:${name}`),
+        definitionMedia: card.definitionMedia.map(name => mediaSignatureByName.get(name) || `missing:${name}`)
+      });
       card.termMedia = card.termMedia.map(name => keyByName.get(name)).filter(Boolean);
       card.definitionMedia = card.definitionMedia.map(name => keyByName.get(name)).filter(Boolean);
     }
 
     const packageName = file.name.replace(/\.(?:apkg|colpkg)$/i, '');
     onProgress('Saving the deck on this device…');
-    await replaceLibrary(cards, media, packageName);
-    return { cards, name: packageName, loadedImages, missingImages, ...importStats };
+    const stored = await storeImportedLibrary(cards, media, packageName, strategy);
+    return {
+      cards: stored.cards,
+      importedCards: cards,
+      name: stored.name,
+      loadedImages,
+      missingImages,
+      updateStats: stored.stats,
+      updatedDecks: stored.targetDecks,
+      removedCards: stored.removedCards,
+      ...importStats
+    };
   }
 
-  window.KeystrokeLibrary = { clearLibrary, deleteDeck, getMedia, importApkg, loadLibrary, replaceLibrary };
+  window.KeystrokeLibrary = { clearLibrary, deleteDeck, getMedia, importApkg, loadLibrary, replaceLibrary, storeImportedLibrary };
 })();

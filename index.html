@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#111214">
-  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%23111214%22/><path d=%22M15 36c9-18 25-18 34 0%22 fill=%22none%22 stroke=%22%23e2b714%22 stroke-width=%226%22 stroke-linecap=%22round%22/></svg>">
   <title>Keystroke — type your way to recall</title>
   <link rel="stylesheet" href="styles.css">
@@ -50,6 +50,14 @@
         <div id="importNotice" class="import-notice hidden" role="status" aria-live="polite"></div>
 
         <div class="setup-options">
+          <fieldset class="option-block" id="importStrategyFieldset">
+            <legend>when importing Anki</legend>
+            <div class="segmented compact-segmented">
+              <label><input type="radio" name="importStrategy" value="update" checked><span>update matching decks</span></label>
+              <label><input type="radio" name="importStrategy" value="replace"><span>replace entire library</span></label>
+            </div>
+            <p class="option-note">Updating keeps unrelated decks and existing progress. The imported package becomes the source of truth for matching decks.</p>
+          </fieldset>
           <div id="deckPicker" class="deck-picker hidden">
             <label for="deckSelect">study deck</label>
             <div class="deck-controls">
@@ -65,6 +73,14 @@
               <label><input type="radio" name="mode" value="mixed"><span>mixed</span></label>
               <label><input type="radio" name="mode" value="learn"><span>anki learn</span></label>
             </div>
+          </fieldset>
+          <fieldset class="option-block daily-limits hidden" id="dailyLimitsFieldset">
+            <legend>daily learn limits</legend>
+            <div class="limit-inputs">
+              <label><span>new cards</span><input id="newCardLimit" type="number" min="0" max="9999" step="1" value="0" inputmode="numeric"></label>
+              <label><span>reviews</span><input id="reviewLimit" type="number" min="0" max="9999" step="1" value="0" inputmode="numeric"></label>
+            </div>
+            <p class="option-note"><span id="dailyLimitSummary">0 new · 0 reviews studied today</span>. Use 0 for unlimited. Limits apply only to Anki Learn mode.</p>
           </fieldset>
           <div class="start-row">
             <button id="startBtn" class="primary-button" disabled>start session <span>↵</span></button>
@@ -133,7 +149,7 @@
       </section>
     </main>
 
-    <footer><span>keystroke · v1.3.3 · created by gemz</span><span>your data never leaves your device</span></footer>
+    <footer><span>keystroke · v1.4.0 · created by gemz</span><span>your data never leaves your device</span></footer>
   </div>
 
   <dialog id="helpDialog">
@@ -197,6 +213,8 @@
   <script src="vendor/sql-wasm-binary.js"></script>
   <script src="vendor/sql-wasm.js"></script>
   <script src="anki-card.js"></script>
+  <script src="deck-update.js"></script>
+  <script src="study-limits.js"></script>
   <script src="library.js"></script>
   <script src="drop-import.js"></script>
   <script src="app.js"></script>

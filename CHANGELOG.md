@@ -4,6 +4,27 @@ All notable changes to Keystroke are recorded here.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-08-27
+
+### Added
+
+- Safe **Update matching decks** imports that merge cards by stable Anki card ID while retaining unrelated decks
+- A separate **Replace entire library** option for intentional full-collection resets
+- Import summaries showing added, updated, unchanged, removed, and conflicted card counts
+- Optional daily new-card and review limits for Learn mode; `0` remains unlimited
+
+### Changed
+
+- Reimporting an updated class deck now preserves valid review schedules, replaces edited card content and images, adds new cards, and removes cards no longer present in that deck
+- Same-day Again and Hard repetitions remain available even after a daily limit is reached
+- Orphaned schedules and unreferenced imported media are removed after a deck update
+
+### Tests
+
+- Added safe-update regressions for unrelated decks, repeated imports, moved and removed cards, conflicting IDs, content hashes, and retained media
+- Added daily-limit regressions for unique daily counts, new and review caps, due dates, same-day repetitions, and unlimited sessions
+- Verified exact conversion parity for 22 real Anki packages containing 17,258 generated cards, with zero skipped or duplicated card IDs within any package
+
 ## [1.3.3] - 2026-08-17
 
 ### Added
